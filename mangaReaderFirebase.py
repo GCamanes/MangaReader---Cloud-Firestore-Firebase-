@@ -154,7 +154,7 @@ def showCollectionMangas(store):
 def addDocumentManga(store, mangaName):
 	if (mangaName in DICO_MANGAS.keys()):
 		try:
-			store.collection(MANGAS_COLLECTION).add({}, mangaName)
+			store.collection(MANGAS_COLLECTION).add({'url': URL_WEBSITE+DICO_MANGAS[mangaName]}, mangaName)
 			print("\nSUCCESS " + mangaName + " added to firestore")
 		except google.api_core.exceptions.AlreadyExists:
 			print('\n/!\ Manga (document) ' + mangaName + ' already exists')
