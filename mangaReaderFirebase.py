@@ -163,9 +163,9 @@ def main():
 
 	# Definition of argument option
 	parser = argparse.ArgumentParser(prog="mangaReaderFirebase.py")
-	parser.add_argument('-f', '--favorite', nargs=1,
+	parser.add_argument('-f', '--favorite',
 		help='list of favorite mangas',
-		action='store', type=str)
+		action="store_true")
 	parser.add_argument('-a', '--addfav', nargs=1,
 		help='add a manga to favorite mangas',
 		action='store', type=str)
@@ -190,6 +190,11 @@ def main():
 	if (args.show != None):
 		print("\n** List of all available mangas with pattern '"+args.show[0]+"'")
 		showMangaList(args.show[0])
+		print()
+		sys.exit()
+
+	elif(args.favorite == True):
+		showFavoriteMangas()
 		print()
 		sys.exit()
 
