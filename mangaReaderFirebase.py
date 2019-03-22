@@ -47,53 +47,6 @@ def getChapName(manga, chap):
 	return chapName
 
 #-----------------------------------------------------------------------------------
-# FAVORITE MANGAS FILE READING
-#-----------------------------------------------------------------------------------
-
-def getFavoriteMangas():
-	f = open(PATH+'/favoriteMangas.txt', 'r')
-	content = f.read().splitlines()
-	f.close()
-	return content
-
-def showFavoriteMangas():
-	fav_list = getFavoriteMangas()
-	print()
-	if (len(fav_list) > 0):
-		for (manga, index) in zip(fav_list, range(1, len(fav_list)+1)):
-			print(" #" + str(index) + " : " + manga)
-	else:
-		print("/!\ no manga in favorite list")
-
-def addFavoriteManga(mangaName):
-	if (mangaName in DICO_MANGAS.keys()):
-		fav_list = getFavoriteMangas()
-		if (mangaName not in fav_list):
-			fav_list.append(mangaName)
-			with open(PATH+'/favoriteMangas.txt', 'w') as f:
-				for item in fav_list:
-					f.write("%s\n" % item)
-			print("\nSUCCESS " + mangaName + " added to favorite list")
-		else:
-			print("\n/!\ " + mangaName + " is already in favorite list")
-	else:
-		print("\n/!\ no existing manga as " + mangaName+"")
-
-def removeFavoriteManga(mangaName):
-	if (mangaName in DICO_MANGAS.keys()):
-		fav_list = getFavoriteMangas()
-		if (mangaName in fav_list):
-			fav_list.append(mangaName)
-			with open(PATH+'/favoriteMangas.txt', 'w') as f:
-				for item in fav_list:
-					if (item != mangaName): f.write("%s\n" % item)
-			print("\nSUCCESS " + mangaName + " removed from favorite list")
-		else:
-			print("\n/!\ " + mangaName + " is not in favorite list")
-	else:
-		print("\n/!\ no existing manga as " + mangaName+"")
-
-#-----------------------------------------------------------------------------------
 # WEBSITE PARSING TO RETRIEVE MANGA DATA
 #-----------------------------------------------------------------------------------
 
@@ -133,22 +86,37 @@ def showMangaList(pattern):
 # CONNECTION AND INTERACTION WITH CLOUD FIRESTORE
 #-----------------------------------------------------------------------------------
 
-def printCollectionDoc(store, collectionName):
+def showCollectionMangas(store):
 	try:
-		for doc in store.collection(u'mangas').get():
+		collection = store.collection(MANGAS_COLLECTION).get()
+		for doc in collection :
 			print(u'{}'.format(doc.id))
 	except google.cloud.exceptions.NotFound:
-		print(u'Missing data')
+		print('Missing data')
 
-def deleteAllDocumentsFromCollection(store):
+def deleteAllDocumentMangas(store):
 	for doc in store.collection(MANGAS_COLLECTION).get():
 		store.collection(MANGAS_COLLECTION).document(doc.id).delete()
 
 def addDocumentManga(store, mangaName):
-	try:
-		store.collection(u'mangas').add({}, mangaName)
-	except google.api_core.exceptions.AlreadyExists:
-		print(u'\n/!\ Manga collection ' + mangaName + u' already exists')
+	if (mangaName in DICO_MANGAS.keys()):
+		try:
+			store.collection(MANGAS_COLLECTION).add({}, mangaName)
+			print("\nSUCCESS " + mangaName + " added to firestore")
+		except google.api_core.exceptions.AlreadyExists:
+			print('\n/!\ Manga (document) ' + mangaName + ' already exists')
+	else:
+		print("\n/!\ no existing manga as " + mangaName+"")
+
+def deleteDocumentManga(store, mangaName):
+	if (mangaName in DICO_MANGAS.keys()):
+		try:
+			store.collection(MANGAS_COLLECTION).document(mangaName).delete()
+			print("\nSUCCESS " + mangaName + " deleted from firestore")
+		except google.api_core.exceptions.AlreadyExists:
+			print('\n/!\ Manga (document) ' + mangaName + " doesn't exists")
+	else:
+		print("\n/!\ no existing manga as " + mangaName+"")
 
 #-----------------------------------------------------------------------------------
 # MAIN FUNCTION
@@ -163,17 +131,23 @@ def main():
 
 	# Definition of argument option
 	parser = argparse.ArgumentParser(prog="mangaReaderFirebase.py")
-	parser.add_argument('-f', '--favorite',
-		help='list of favorite mangas',
+	parser.add_argument('-l', '--list',
+		help='show list of mangas in firestore',
 		action="store_true")
-	parser.add_argument('-a', '--addfav', nargs=1,
-		help='add a manga to favorite mangas',
+	parser.add_argument('-a', '--add', nargs=1,
+		help='add a manga to firestore',
 		action='store', type=str)
-	parser.add_argument('-r', '--removefav', nargs=1,
-		help='remove a manga from favorite mangas',
+	parser.add_argument('-d', '--delete', nargs=1,
+		help='remove a manga from firestore',
 		action='store', type=str)
 	parser.add_argument('-s', '--show', nargs=1,
 		help='list of all available mangas that include a search pattern',
+		action='store', type=str)
+	parser.add_argument('-u', '--update', nargs=1,
+		help='update all favorite mangas in cloud firestore',
+		action='store', type=str)
+	parser.add_argument('-m', '--manga', nargs=1,
+		help='update one manga from favorite list in cloud firestore',
 		action='store', type=str)
 
 	# Parsing of command line argument
@@ -193,21 +167,20 @@ def main():
 		print()
 		sys.exit()
 
-	elif(args.favorite == True):
-		showFavoriteMangas()
+	elif(args.list == True):
+		showCollectionMangas(store)
 		print()
 		sys.exit()
 
-	elif(args.addfav != None):
-		addFavoriteManga(args.addfav[0])
+	elif(args.add != None):
+		addDocumentManga(store, args.add[0])
 		print()
 		sys.exit()
 
-	elif(args.removefav != None):
-		addFavoriteManga(args.removefav[0])
+	elif(args.delete != None):
+		deleteDocumentManga(store, args.delete[0])
 		print()
 		sys.exit()
-
 
 if __name__ == "__main__":
     main()
