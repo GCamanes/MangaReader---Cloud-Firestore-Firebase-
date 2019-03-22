@@ -31,6 +31,10 @@ FAVORITE_MANGAS_LIST = []
 PATH = "."
 DICO_MANGAS = {}
 
+#-----------------------------------------------------------------------------------
+# OPERATION ON CHAPTER NAME AND PAGE NAME
+#-----------------------------------------------------------------------------------
+
 # Function to get the complete name of a chapter
 # Format : [nameOfManga]_[chap num on 4 digit]
 # Used in : chap repository and img file
@@ -45,6 +49,15 @@ def getChapName(manga, chap):
 	else:
 		chapName = manga+"_chap"+chap
 	return chapName
+
+# Function to get the string page number (3 digits)
+def getPageName(page):
+	strPage = str(page)
+	if (len(strPage) == 1):
+		strPage = "00"+strPage
+	elif (len(strPage) == 2):
+		strPage = "0"+strPage
+	return strPage
 
 #-----------------------------------------------------------------------------------
 # WEBSITE PARSING TO RETRIEVE MANGA DATA
@@ -75,28 +88,68 @@ def getMangasDico():
 			mangaName = mangaUrl.split('/')[1]
 			DICO_MANGAS[mangaName] = mangaUrl
 
+# Function to get chapter dico from a manga
+# Fill with chapter name as key and chapter url as value
+# Return : dictionnary
+def getMangaChaptersDico(mangaName):
+	# Get html content in a file
+	os.system("curl -s " + URL_WEBSITE+DICO_MANGAS[mangaName]+ " | grep '" + '<a href="/' + mangaName + '/' + "'> "+PATH+"/mangaChapterslist.txt")
+	# read the file
+	f = open(PATH+'/mangaChapterslist.txt', 'r')
+	content = f.readlines()
+	f.close()
+
+	dico_chapters = {}
+
+	for line in content:
+		if ("</li>" not in line):
+			chapterUrl = line.split('<a href="')[1].split('">')[0]
+			chapterNumber = getChapName(mangaName, chapterUrl.split('/')[2])
+			dico_chapters[chapterNumber] = chapterUrl
+
+	return dico_chapters
+
 # Function to show all available manga according to a pattern
 # Return : void
 def showMangaList(pattern):
-	for manga in sorted(DICO_MANGAS):
-		if (pattern in manga):
-			print("%s" % (manga))
+	for mangaName in sorted(DICO_MANGAS):
+		if (pattern in mangaName):
+			print("%s" % (mangaName))
 
 #-----------------------------------------------------------------------------------
 # CONNECTION AND INTERACTION WITH CLOUD FIRESTORE
 #-----------------------------------------------------------------------------------
 
-def showCollectionMangas(store):
+def getCollectionMangasIDs(store):
+	listID = []
+
 	try:
 		collection = store.collection(MANGAS_COLLECTION).get()
 		for doc in collection :
-			print(u'{}'.format(doc.id))
+			listID.append(doc.id)
 	except google.cloud.exceptions.NotFound:
-		print('Missing data')
+		print('/!\ Collection ' + MANGAS_COLLECTION + "doesn't exist in firestore")
 
-def deleteAllDocumentMangas(store):
-	for doc in store.collection(MANGAS_COLLECTION).get():
-		store.collection(MANGAS_COLLECTION).document(doc.id).delete()
+	return listID
+
+def getCollectionChaptersIDs(store, mangaName):
+	listID = []
+
+	try:
+		collection = store.collection(MANGAS_COLLECTION).document(mangaName)\
+			.collection(CHAPTERS_COLLECTION).get()
+		for doc in collection :
+			listID.append(doc.id)
+	except google.cloud.exceptions.NotFound:
+		print('/!\ Collection ' + CHAPTERS_COLLECTION + "doesn't exist in firestore")
+
+	return listID
+
+def showCollectionMangas(store):
+	listID = getCollectionMangasIDs(store)
+	print("\n** List of manga on firestore **")
+	for id, index in zip(listID, range(1, len(listID)+1)):
+		print(" #"+str(index)+" "+id)
 
 def addDocumentManga(store, mangaName):
 	if (mangaName in DICO_MANGAS.keys()):
@@ -108,15 +161,37 @@ def addDocumentManga(store, mangaName):
 	else:
 		print("\n/!\ no existing manga as " + mangaName+"")
 
+def updateMangaOnFirestore(store, mangaName):
+	if (mangaName in getCollectionMangasIDs(store)):
+		print("UPDATE ", mangaName, "...")
+
+		dico_chapters = getMangaChaptersDico(mangaName)
+
+		for chapter in sorted(dico_chapters)[:10]:
+			store.collection(MANGAS_COLLECTION).document(mangaName)\
+				.collection(CHAPTERS_COLLECTION).add({}, chapter)
+	else:
+		print('\n/!\ Manga (document) ' + mangaName + " doesn't exists in firestore")
+
 def deleteDocumentManga(store, mangaName):
 	if (mangaName in DICO_MANGAS.keys()):
 		try:
+			listChapterIDs = getCollectionChaptersIDs(store, mangaName)
+			for chapter in listChapterIDs:
+				deleteDocuementChapter(store, mangaName, chapter)
 			store.collection(MANGAS_COLLECTION).document(mangaName).delete()
 			print("\nSUCCESS " + mangaName + " deleted from firestore")
 		except google.api_core.exceptions.AlreadyExists:
 			print('\n/!\ Manga (document) ' + mangaName + " doesn't exists")
 	else:
 		print("\n/!\ no existing manga as " + mangaName+"")
+
+def deleteDocuementChapter(store, mangaName, chapter):
+	try:
+		store.collection(MANGAS_COLLECTION).document(mangaName)\
+			.collection(CHAPTERS_COLLECTION).document(chapter).delete()
+	except google.api_core.exceptions.AlreadyExists:
+		print('\n/!\ Chapter (document) ' + chapter + " doesn't exists")
 
 #-----------------------------------------------------------------------------------
 # MAIN FUNCTION
@@ -179,6 +254,11 @@ def main():
 
 	elif(args.delete != None):
 		deleteDocumentManga(store, args.delete[0])
+		print()
+		sys.exit()
+
+	elif(args.manga != None):
+		updateMangaOnFirestore(store, args.manga[0])
 		print()
 		sys.exit()
 
