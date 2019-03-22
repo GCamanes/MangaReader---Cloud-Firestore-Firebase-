@@ -109,6 +109,29 @@ def getMangaChaptersDico(mangaName):
 
 	return dico_chapters
 
+# Function to get pages dico from a chapter
+# Fill with page name as key and page url as value
+# Return : dictionnary
+def getMangaChapterPagesDico(chapterUrl):
+	dico_pages = {}
+	chapterNumber = chapterUrl.split("/")[-1]
+
+	# Get html content in a file
+	os.system("curl -s " + URL_WEBSITE+chapterUrl+ " | grep '" + '<option value="' + chapterUrl + "'> "+PATH+"/mangaChapterPageslist.txt")
+	# read the file
+	f = open(PATH+'/mangaChapterPageslist.txt', 'r')
+	content = f.readlines()
+	f.close()
+
+	for line in content:
+		pageUrl = line.split('<option value="')[1].split('">')[0]
+		if ("selected" in pageUrl):
+			pageUrl = pageUrl.split('"')[0]
+		pageNumber = getPageName(line.split('</option>')[0].split(">")[-1])
+		dico_pages[pageNumber] = pageUrl
+
+	return dico_pages
+
 # Function to show all available manga according to a pattern
 # Return : void
 def showMangaList(pattern):
@@ -141,7 +164,21 @@ def getCollectionChaptersIDs(store, mangaName):
 		for doc in collection :
 			listID.append(doc.id)
 	except google.cloud.exceptions.NotFound:
-		print('/!\ Collection ' + CHAPTERS_COLLECTION + "doesn't exist in firestore")
+		print('/!\ Collection ' + CHAPTERS_COLLECTION + " for manga "+ mangaName +" doesn't exist in firestore")
+
+	return listID
+
+def getCollectionPagesIDs(store, mangaName, chapter):
+	listID = []
+
+	try:
+		collection = store.collection(MANGAS_COLLECTION).document(mangaName)\
+			.collection(CHAPTERS_COLLECTION).document(chapter)\
+			.collection(PAGES_COLLECTION).get()
+		for doc in collection :
+			listID.append(doc.id)
+	except google.cloud.exceptions.NotFound:
+		print('/!\ Collection ' + PAGES_COLLECTION + " for chapter "+ chapter +" doesn't exist in firestore")
 
 	return listID
 
@@ -161,37 +198,93 @@ def addDocumentManga(store, mangaName):
 	else:
 		print("\n/!\ no existing manga as " + mangaName+"")
 
+def updateAllMangaOnFirestore(store):
+	print("\nUPDATE ALL ...")
+	listManga = getCollectionMangasIDs(store)
+	if (len(listManga) > 0):
+		for mangaName in listManga:
+			updateMangaOnFirestore(store, mangaName)
+	else:
+		print("/!\ no manga to update on firestore")
+
 def updateMangaOnFirestore(store, mangaName):
 	if (mangaName in getCollectionMangasIDs(store)):
-		print("UPDATE ", mangaName, "...")
+		print("\nUPDATE ", mangaName, "...")
 
 		dico_chapters = getMangaChaptersDico(mangaName)
 
-		for chapter in sorted(dico_chapters)[:10]:
-			store.collection(MANGAS_COLLECTION).document(mangaName)\
-				.collection(CHAPTERS_COLLECTION).add({}, chapter)
+		for chapter in sorted(dico_chapters):
+			updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
+
+		print("\nSUCCESS " + mangaName + " updated on firestore")
 	else:
 		print('\n/!\ Manga (document) ' + mangaName + " doesn't exists in firestore")
 
+def updateMangaChapterOnFirestore(store, mangaName, chapter, chapterUrl):
+	try:
+		print("  UPDATE", mangaName, chapter)
+		store.collection(MANGAS_COLLECTION).document(mangaName)\
+			.collection(CHAPTERS_COLLECTION).add({"url": URL_WEBSITE+chapterUrl}, chapter)
+
+		dico_pages = getMangaChapterPagesDico(chapterUrl)
+		for page in sorted(dico_pages):
+			updateMangaChapterPageOnFirestore(store, mangaName, chapter, chapterUrl, page, dico_pages[page])
+
+	except google.api_core.exceptions.AlreadyExists:
+		pass
+
+def updateMangaChapterPageOnFirestore(store, mangaName, chapter, chapterUrl, page, pageUrl):
+	pagename = chapter+"_"+page
+	# Get html content in a file
+	os.system("curl -s " + URL_WEBSITE+pageUrl+ " | grep '" + chapterUrl + "' | grep 'img' > "+PATH+"/mangaChapterPageUrl.txt")
+	# read the file
+	f = open(PATH+'/mangaChapterPageUrl.txt', 'r')
+	content = f.readlines()
+	f.close()
+	if (len(content) != 1):
+		print("/!\ ERROR page", chapter, chapterUrl, page, pageUrl)
+		sys.exit(1)
+	else:
+		fileUrl = content[0].split('src="')[-1].split('"')[0]
+		try:
+			store.collection(MANGAS_COLLECTION).document(mangaName)\
+				.collection(CHAPTERS_COLLECTION).document(chapter)\
+				.collection(PAGES_COLLECTION).add({"url": fileUrl}, pagename)
+
+		except google.api_core.exceptions.AlreadyExists:
+			pass
+		
+
 def deleteDocumentManga(store, mangaName):
 	if (mangaName in DICO_MANGAS.keys()):
-		try:
+		if (mangaName in getCollectionMangasIDs(store)):
 			listChapterIDs = getCollectionChaptersIDs(store, mangaName)
 			for chapter in listChapterIDs:
-				deleteDocuementChapter(store, mangaName, chapter)
+				deleteDocumentChapter(store, mangaName, chapter)
 			store.collection(MANGAS_COLLECTION).document(mangaName).delete()
 			print("\nSUCCESS " + mangaName + " deleted from firestore")
-		except google.api_core.exceptions.AlreadyExists:
+		else:
 			print('\n/!\ Manga (document) ' + mangaName + " doesn't exists")
 	else:
 		print("\n/!\ no existing manga as " + mangaName+"")
 
-def deleteDocuementChapter(store, mangaName, chapter):
-	try:
+def deleteDocumentChapter(store, mangaName, chapter):
+	if (chapter in getCollectionChaptersIDs(store, mangaName)):
+		listPageIDs = getCollectionPagesIDs(store, mangaName, chapter)
+		for page in listPageIDs:
+			deleteDocumentPage(store, mangaName, chapter, page)
 		store.collection(MANGAS_COLLECTION).document(mangaName)\
 			.collection(CHAPTERS_COLLECTION).document(chapter).delete()
-	except google.api_core.exceptions.AlreadyExists:
+	else:
 		print('\n/!\ Chapter (document) ' + chapter + " doesn't exists")
+
+def deleteDocumentPage(store, mangaName, chapter, page):
+	if (page in getCollectionPagesIDs(store, mangaName, chapter)):
+		store.collection(MANGAS_COLLECTION).document(mangaName)\
+			.collection(CHAPTERS_COLLECTION).document(chapter)\
+			.collection(PAGES_COLLECTION).document(page).delete()
+	else:
+		print('\n/!\ Page (document) ' + page + " doesn't exists")
 
 #-----------------------------------------------------------------------------------
 # MAIN FUNCTION
@@ -218,10 +311,10 @@ def main():
 	parser.add_argument('-s', '--show', nargs=1,
 		help='list of all available mangas that include a search pattern',
 		action='store', type=str)
-	parser.add_argument('-u', '--update', nargs=1,
+	parser.add_argument('--updateall',
 		help='update all favorite mangas in cloud firestore',
-		action='store', type=str)
-	parser.add_argument('-m', '--manga', nargs=1,
+		action='store_true')
+	parser.add_argument('-u', '--update', nargs=1,
 		help='update one manga from favorite list in cloud firestore',
 		action='store', type=str)
 
@@ -257,8 +350,13 @@ def main():
 		print()
 		sys.exit()
 
-	elif(args.manga != None):
-		updateMangaOnFirestore(store, args.manga[0])
+	elif(args.update != None):
+		updateMangaOnFirestore(store, args.update[0])
+		print()
+		sys.exit()
+
+	elif(args.updateall == True):
+		updateAllMangaOnFirestore(store)
 		print()
 		sys.exit()
 
