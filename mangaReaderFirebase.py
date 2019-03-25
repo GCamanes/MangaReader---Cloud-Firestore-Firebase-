@@ -186,7 +186,7 @@ def showCollectionMangas(store):
 	listID = getCollectionMangasIDs(store)
 	print("\n** List of manga on firestore **")
 	for id, index in zip(listID, range(1, len(listID)+1)):
-		print(" #"+str(index)+" "+id)
+		print(" #"+str(index), id, str(len(getCollectionChaptersIDs(store, id))))
 
 def addDocumentManga(store, mangaName):
 	if (mangaName in DICO_MANGAS.keys()):
