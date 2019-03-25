@@ -213,8 +213,11 @@ def updateMangaOnFirestore(store, mangaName):
 
 		dico_chapters = getMangaChaptersDico(mangaName)
 
+		list_chapteID = getCollectionChaptersIDs(store, mangaName)
+
 		for chapter in sorted(dico_chapters):
-			updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
+			if(chapter not in list_chapteID):
+				updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
 
 		print("\nSUCCESS " + mangaName + " updated on firestore")
 	else:
