@@ -317,6 +317,9 @@ def main():
 	parser.add_argument('-d', '--delete', nargs=1,
 		help='remove a manga from firestore',
 		action='store', type=str)
+	parser.add_argument('-c', '--chap', nargs=1,
+		help='specific chapter',
+		action='store', type=str)
 	parser.add_argument('-s', '--show', nargs=1,
 		help='list of all available mangas that include a search pattern',
 		action='store', type=str)
@@ -355,7 +358,15 @@ def main():
 		sys.exit()
 
 	elif(args.delete != None):
-		deleteDocumentManga(store, args.delete[0])
+		if (args.chap != None):
+			chapter = getChapName(args.delete[0], args.chap[0])
+			if (chapter in getCollectionChaptersIDs(store, args.delete[0])):
+				deleteDocumentChapter(store, args.delete[0], chapter)
+				print("\nSUCCESS chapter", chapter, "in", args.delete[0], "deleted from firestore")
+			else:
+				print("/!\ ERROR no chapter", chapter, "in manga", args.delete[0], "on firestore")
+		else:
+			deleteDocumentManga(store, args.delete[0])
 		print()
 		sys.exit()
 
