@@ -243,7 +243,13 @@ def updateMangaChapterPageOnFirestore(store, mangaName, chapter, chapterUrl, pag
 	f.close()
 	if (len(content) != 1):
 		print("/!\ ERROR page", chapter, chapterUrl, page, pageUrl)
-		sys.exit(1)
+		print(content)
+		ferr = open(PATH+'/ERROR_PAGES.txt', 'a+')
+		ferr.write("# ERROR", chapter, chapterUrl, page, pageUrl)
+		ferr.write(content)
+		ferr.write("\n")
+		ferr.close()
+		pass
 	else:
 		fileUrl = content[0].split('src="')[-1].split('"')[0]
 		try:
