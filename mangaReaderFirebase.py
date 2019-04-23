@@ -300,7 +300,7 @@ def getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, pageUrl)
 		return {"url": "", pagename: pagename}
 	else:
 		fileUrl = content[0].split('src="')[-1].split('"')[0]
-		return {"url": "", pagename: pagename}
+		return {"url": fileUrl, pagename: pagename}
 		
 
 def deleteDocumentManga(store, mangaName):
