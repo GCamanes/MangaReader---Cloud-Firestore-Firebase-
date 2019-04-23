@@ -218,6 +218,9 @@ def updateMangaOnFirestore(store, mangaName):
 		for chapter in sorted(dico_chapters):
 			if(chapter not in list_chapteID):
 				updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
+			else:
+				print("need to update to V2")
+				# updateMangaChapterOnFirestoreV2(store, mangaName, chapter, dico_chapters[chapter])
 
 		print("\nSUCCESS " + mangaName + " updated on firestore")
 	else:
@@ -262,6 +265,42 @@ def updateMangaChapterPageOnFirestore(store, mangaName, chapter, chapterUrl, pag
 
 		except google.api_core.exceptions.AlreadyExists:
 			pass
+
+def updateMangaChapterOnFirestoreV2(store, mangaName, chapter, chapterUrl):
+	try:
+		print("  UPDATE V2", mangaName, chapter)
+		"""store.collection(MANGAS_COLLECTION).document(mangaName)\
+			.collection(CHAPTERS_COLLECTION).add({"url": URL_WEBSITE+chapterUrl}, chapter)"""
+
+		dico_pages = getMangaChapterPagesDico(chapterUrl)
+		list_pages = []
+		for page in sorted(dico_pages):
+			list_pages.append(getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, dico_pages[page]))
+		print(list_pages)
+
+	except google.api_core.exceptions.AlreadyExists:
+		pass
+
+def getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, pageUrl):
+	pagename = chapter+"_"+page
+	# Get html content in a file
+	os.system("curl -s " + URL_WEBSITE+pageUrl+ " | grep '" + chapterUrl + "' | grep 'img' > "+PATH+"/mangaChapterPageUrl.txt")
+	# read the file
+	f = open(PATH+'/mangaChapterPageUrl.txt', 'r')
+	content = f.readlines()
+	f.close()
+	if (len(content) != 1):
+		print("/!\ ERROR page", chapter, chapterUrl, page, pageUrl)
+		print(content)
+		ferr = open(PATH+'/ERROR_PAGES.txt', 'a+')
+		ferr.write("# ERROR", chapter, chapterUrl, page, pageUrl)
+		ferr.write(content)
+		ferr.write("\n")
+		ferr.close()
+		return {"url": "", pagename: pagename}
+	else:
+		fileUrl = content[0].split('src="')[-1].split('"')[0]
+		return {"url": "", pagename: pagename}
 		
 
 def deleteDocumentManga(store, mangaName):
