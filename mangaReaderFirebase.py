@@ -216,8 +216,8 @@ def updateMangaOnFirestore(store, mangaName):
 		list_chapteID = getCollectionChaptersIDs(store, mangaName)
 
 		for chapter in sorted(dico_chapters):
-			#if(chapter not in list_chapteID):
-			updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
+			if(chapter not in list_chapteID):
+				updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
 
 		print("\nSUCCESS " + mangaName + " updated on firestore")
 	else:
@@ -232,15 +232,10 @@ def updateMangaChapterOnFirestore(store, mangaName, chapter, chapterUrl):
 			list_pages.append(getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, dico_pages[page]))
 
 		store.collection(MANGAS_COLLECTION).document(mangaName)\
-			.collection(CHAPTERS_COLLECTION).document(chapter).update({
-				u'pages': list_pages
-			})
-
-		"""store.collection(MANGAS_COLLECTION).document(mangaName)\
-			.collection(CHAPTERS_COLLECTION).add({
+			.collection(CHAPTERS_COLLECTION).document(chapter).set({
 				u'url': URL_WEBSITE+chapterUrl,
 				u'pages': list_pages
-			}, chapter)"""
+			})
 
 	except google.api_core.exceptions.AlreadyExists:
 		pass
