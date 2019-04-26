@@ -217,6 +217,7 @@ def updateMangaOnFirestore(store, mangaName):
 
 		for chapter in sorted(dico_chapters):
 			if(chapter not in list_chapteID):
+			# if (chapter >= 'dragon-ball_chap0382'):
 				updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])
 
 		print("\nSUCCESS " + mangaName + " updated on firestore")
@@ -257,7 +258,7 @@ def getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, pageUrl)
 		print("/!\ ERROR page", chapter, chapterUrl, page, pageUrl)
 		print(content)
 		ferr = open(PATH+'/ERROR_PAGES.txt', 'a+')
-		ferr.write("# ERROR", chapter, chapterUrl, page, pageUrl)
+		ferr.write("# ERROR"+chapter+" "+chapterUrl+" "+page+" "+pageUrl)
 		ferr.write(content)
 		ferr.write("\n")
 		ferr.close()
