@@ -238,7 +238,7 @@ def deleteManga(store, mangaName):
             store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
                 u'list': mangasList,
             })
-            print('\nSUCCESS', mangaName, 'deletd from firestore')
+            print('\nSUCCESS', mangaName, 'delete from firestore')
         else:
             print('\n/!\ ERROR manga', mangaName, 'not in manga list')
     except:
@@ -316,6 +316,15 @@ def updateAllMangaOnFirestore(store):
     if (len(mangasList) > 0):
         for manga in mangasList:
             updateMangaOnFirestore(store, manga[u'name'])
+    else:
+        print("\n/!\ no manga to update on firestore")
+
+def updateAllMangaOnFirestore(store):
+    print("\nDELETE ALL ...")
+    mangasList = getMangasList(store)
+    if (len(mangasList) > 0):
+        for manga in mangasList:
+            deleteManga(store, manga[u'name'])
     else:
         print("\n/!\ no manga to update on firestore")
 
@@ -410,6 +419,9 @@ def main():
     parser.add_argument('--copy', nargs=1,
         help='copy one manga in cloud firestore',
         action='store', type=str)
+    parser.add_argument('--deleteall',
+        help='delete all mangas in cloud firestore',
+        action='store_true')
 
     # Parsing of command line argument
     args = parser.parse_args(sys.argv[1:])
@@ -455,6 +467,11 @@ def main():
 
     elif(args.copy != None):
         # copyMangaOnFirestore(store, args.copy[0])
+        print()
+        sys.exit()
+
+    elif(args.deleteall == True):
+        updateAllMangaOnFirestore(store)
         print()
         sys.exit()
 
