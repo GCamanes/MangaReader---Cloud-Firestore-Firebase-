@@ -186,7 +186,6 @@ def removeMangaFromMangasList(mangaName, mangasList):
             break
     if (mangaToFind != None):
         mangasList.remove(mangaToFind)
-    return mangasList
 
 def showCollectionMangas(store):
     try:
@@ -197,15 +196,23 @@ def showCollectionMangas(store):
     except google.cloud.exceptions.NotFound:
         print('/!\ Collection ', MANGAS_COLLECTION, "doesn't exist in firestore")
 
+def updateMangaListItem(store, mangasList, mangaName, lastChapter, url, strAction):
+    removeMangaFromMangasList(mangaName, mangasList)
+    mangasList.append({u'name': mangaName, u'lastChapter': lastChapter, u'url': url })
+    try:
+        store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
+            u'list': sorted(mangasList, key=itemgetter('name')),
+        })
+        print('\nSUCCESS firestore list item', strAction, mangaName)
+    except google.api_core.exceptions.AlreadyExists:
+        print('\n/!\ ERROR firestore list item', strAction, mangaName)
+
 def addManga(store, mangaName):
     if (mangaName in DICO_MANGAS.keys()):
         mangasList = getMangasList(store)
         if (findMangaInMangasList(mangaName, mangasList) == None):
-            mangasList.append({u'name': mangaName, u'lastChapter': 'None', u'url': URL_WEBSITE+DICO_MANGAS[mangaName] })
             try:
-                store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
-                    u'list': sorted(mangasList, key=itemgetter('name')),
-                })
+                updateMangaListItem(store, mangasList, mangaName, 'None', URL_WEBSITE+DICO_MANGAS[mangaName], 'ADD MANGA')
                 store.collection(CHAPTERS_COLLECTION).document(mangaName).set({})
                 print('\nSUCCESS', mangaName, 'added to firestore')
             except google.api_core.exceptions.AlreadyExists:
@@ -221,6 +228,7 @@ def deleteManga(store, mangaName):
         if (findMangaInMangasList(mangaName, mangasList) != None):
             collection = store.collection(CHAPTERS_COLLECTION).document(mangaName)\
                 .collection(CHAPTERS_COLLECTION_PARTS).get()
+
             for doc in collection :
                 store.collection(CHAPTERS_COLLECTION).document(mangaName)\
                     .collection(CHAPTERS_COLLECTION_PARTS).document(doc.id).delete()
@@ -235,56 +243,81 @@ def deleteManga(store, mangaName):
             print('\n/!\ ERROR manga', mangaName, 'not in manga list')
     except:
         print('\n/!\ ERROR in deleting manga', mangaName)
-
-def findChapterInBatch(store, mangaName, chapter, batchName):
-    batch = store.collection(CHAPTERS_COLLECTION).document(mangaName)\
-        .collection(CHAPTERS_COLLECTION_PARTS).document(batchName).get().to_dict()
-    chapterToFind = None
-    if (batch == None):
-        return chapterToFind
-    else:
-        for chap in batch['chapters']:
-            if (chap['chapter'] == chapter):
-                chapterToFind = chapter
-                break
-        return chapterToFind
             
 def updateMangaOnFirestore(store, mangaName):
     mangasList = getMangasList(store)
-    if (findMangaInMangasList(mangaName, mangasList) != None):
+    mangaItem = findMangaInMangasList(mangaName, mangasList)
+    if (mangaItem != None):
         print("\nUPDATE ", mangaName, "...")
-
         dico_chapters = getMangaChaptersDico(mangaName)
-        """batchList = []
-        batchs = store.collection(CHAPTERS_COLLECTION).document(mangaName)\
-            .collection(CHAPTERS_COLLECTION_PARTS).get()
-        for batch in batchs:
-            batchList.append(batch.id)"""
 
         for chapter in sorted(dico_chapters):
-            chapterBatch = getBatchName(chapter)
-            if (findChapterInBatch(store, mangaName, chapter, chapterBatch) == None):
-                print(chapter)
-            else:
-                print('existing', chapter)
-
-        """for chapter in sorted(dico_chapters):
-            # print(key, dico_chapters[key], getBatchName(key))
-            print(chapter, dico_chapters[chapter], getBatchName(chapter))
-            batch = store.collection(CHAPTERS_COLLECTION).document(mangaName)\
-                .collection(CHAPTERS_COLLECTION_PARTS).document(getBatchName(chapter)).get()
-            print(u'Document data: {}'.format(batch.to_dict()))"""
-            
-
-        """list_chapteID = getCollectionChaptersIDs(store, mangaName)
-
-        for chapter in sorted(dico_chapters):
-            if(chapter not in list_chapteID):
-                updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter])"""
+            if (mangaItem['lastChapter'] == 'None' or chapter > mangaItem['lastChapter']):
+                updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter], mangasList)
+                mangaItem = findMangaInMangasList(mangaName, mangasList)
 
         print("\nSUCCESS " + mangaName + " updated on firestore")
     else:
         print('\n/!\ Manga (document) ' + mangaName + " doesn't exists in firestore")
+
+def updateMangaChapterOnFirestore(store, mangaName, chapter, chapterUrl, mangasList):
+    try:
+        chapterBatch = getBatchName(chapter)
+        print("  UPDATING", mangaName, chapter, chapterBatch, '...')
+        dico_pages = getMangaChapterPagesDico(chapterUrl)
+        pages = []
+        for page in sorted(dico_pages):
+            pages.append(getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, dico_pages[page]))
+
+        batch = store.collection(CHAPTERS_COLLECTION).document(mangaName)\
+                    .collection(CHAPTERS_COLLECTION_PARTS).document(chapterBatch)
+
+        if (batch.get().to_dict() == None):
+            print('No existing batch', chapterBatch)
+            chapters = []
+        else:
+            print('Existing batch', chapterBatch)
+            chapters = batch.get().to_dict()[u'chapters']
+        
+        chapters.append({u'chapter': chapter, u'pages': pages, u'url': chapterUrl})
+        batch.set({
+            u'chapters': chapters,
+        })
+        updateMangaListItem(store, mangasList, mangaName, chapter, URL_WEBSITE+DICO_MANGAS[mangaName], 'UPDATE CHAPTER')
+
+    except google.api_core.exceptions.AlreadyExists:
+        pass
+
+def getMangaChapterPageURL(store, mangaName, chapter, chapterUrl, page, pageUrl):
+	pagename = chapter+"_"+page
+	# Get html content in a file
+	os.system("curl -s " + URL_WEBSITE+pageUrl+ " | grep '" + chapterUrl + "' | grep 'img' > "+PATH+"/mangaChapterPageUrl.txt")
+	# read the file
+	f = open(PATH+'/mangaChapterPageUrl.txt', 'r')
+	content = f.readlines()
+	f.close()
+
+	if (len(content) != 1):
+		print("/!\ ERROR page", chapter, chapterUrl, page, pageUrl)
+		print(content)
+		ferr = open(PATH+'/ERROR_PAGES.txt', 'a+')
+		ferr.write("# ERROR"+chapter+" "+chapterUrl+" "+page+" "+pageUrl)
+		ferr.write(content)
+		ferr.write("\n")
+		ferr.close()
+		return {u'url': "", u'page': page}
+	else:
+		fileUrl = content[0].split('src="')[-1].split('"')[0]
+		return {u'url': fileUrl, u'page': page}
+
+def updateAllMangaOnFirestore(store):
+    print("\nUPDATE ALL ...")
+    mangasList = getMangasList(store)
+    if (len(mangasList) > 0):
+        for manga in mangasList:
+            updateMangaOnFirestore(store, manga[u'name'])
+    else:
+        print("\n/!\ no manga to update on firestore")
 
 def copyMangaOnFirestore(store, mangaName):
     mangasList = getMangasList(store)
@@ -331,11 +364,8 @@ def copyMangaOnFirestore(store, mangaName):
                     .collection(CHAPTERS_COLLECTION_PARTS).document(batchName).set({
                     u'chapters': batchs[batchNumber],
                 })
-            removeMangaFromMangasList(mangaName, mangasList)
-            mangasList.append({u'name': mangaName, u'lastChapter': batchs[-1][-1]['chapter'], u'url': URL_WEBSITE+DICO_MANGAS[mangaName] })
-            store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
-                u'list': sorted(mangasList, key=itemgetter('name')),
-            })
+
+            updateMangaListItem(store, mangasList, mangaName, batchs[-1][-1]['chapter'], URL_WEBSITE+DICO_MANGAS[mangaName], 'COPY')
             print('\nSUCCESS', mangaName, 'copied in firestore')
         except google.api_core.exceptions.AlreadyExists:
             print('\n/!\ ERROR in copying manga', mangaName, 'in manga list')
@@ -419,12 +449,12 @@ def main():
         sys.exit()
 
     elif(args.updateall == True):
-        # updateAllMangaOnFirestore(store)
+        updateAllMangaOnFirestore(store)
         print()
         sys.exit()
 
     elif(args.copy != None):
-        copyMangaOnFirestore(store, args.copy[0])
+        # copyMangaOnFirestore(store, args.copy[0])
         print()
         sys.exit()
 
