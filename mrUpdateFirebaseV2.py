@@ -63,6 +63,16 @@ def getPageName(page):
 		strPage = "0"+strPage
 	return strPage
 
+def getBatchName(chapterName):
+    chap = float(chapterName)
+    batchNumber = math.ceil(chap/NUMBER_OF_CHAPTERS_PER_BATCH)
+    batchName = 'part_'
+    if (batchNumber < 10) :
+        batchName = batchName + '0' + str(batchNumber)
+    else:
+        batchName = batchName + str(batchNumber)
+    return batchName
+
 #-----------------------------------------------------------------------------------
 # WEBSITE PARSING TO RETRIEVE MANGA DATA
 #-----------------------------------------------------------------------------------
@@ -70,16 +80,16 @@ def getPageName(page):
 # Function to search for and show all available manga fiting with a pattern
 # Return : void
 def searchManga(pattern):
-    print('** searching ...')
+    print('SEARCHING ...')
     pattern = pattern.replace('-', '_')
     
     # Get html content in a file
-    os.system("curl -s " + URL_SEARCH+pattern + " | grep '" + pattern + "' > "+PATH+"/searchResults.txt")
+    os.system("curl -s " + URL_SEARCH+pattern + " | grep '" + URL_MANGA + "' | grep -v '<h3>' > "+PATH+"/searchResults.txt")
     # read the file
     f = open(PATH+'/searchResults.txt', 'r')
     content = f.readlines()
     f.close()
-    os.system("rm "+PATH+"/searchResults.txt")
+    # os.system("rm "+PATH+"/searchResults.txt")
 
     searchResult = []
     for line in content:
@@ -96,12 +106,12 @@ def searchManga(pattern):
 # Return : dict
 def getMangaInfos(mangaUrl):
     # Get html content in a file
-    os.system("curl -s " + mangaUrl + " > "+PATH+"/mangasInfos.txt")
+    os.system("curl -s " + mangaUrl + " > "+PATH+"/mangaInfos.txt")
     # read the file
-    f = open(PATH+'/mangasInfos.txt', 'r')
+    f = open(PATH+'/mangaInfos.txt', 'r')
     content = f.readlines()
     f.close()
-    os.system("rm "+PATH+"/mangasInfos.txt")
+    # os.system("rm "+PATH+"/mangaInfos.txt")
 
     mangaDict = {'name': '', 'imgUrl': '', 'url': mangaUrl, 'status': '', 'authors': [], 'lastChapter': 'None'}
 
@@ -148,7 +158,7 @@ def getMangaInfos(mangaUrl):
 # Function to get chapter dico from a manga
 # Fill with chapter name as key and chapter url as value
 # Return : dictionnary
-def getMangaChaptersDico(mangaUrl):
+def getMangaChaptersDico(mangaName, mangaUrl):
     # Get html content in a file
     os.system("curl -s " + mangaUrl + " | grep '" + URL_CHAPTER + "' > "+PATH+"/mangaChapterslist.txt")
     # read the file
@@ -158,13 +168,62 @@ def getMangaChaptersDico(mangaUrl):
     # os.system("rm "+PATH+"/mangaChapterslist.txt")
         
     dico_chapters = {}
+
     for line in content:
         if ("<span>" in line):
             chapterUrl = line.split('<a href="')[1].split('"')[0]
             chapterNumber = getChapName(chapterUrl.split('_')[-1])
-            dico_chapters[chapterNumber] = chapterUrl
+            if ('.' in chapterNumber):
+                titlePart = line.split('title="')[-1].split('">')[-1].split('<')[0]
+                chapterNumbeInTitle = titlePart.split(':')[0]
+                if ('v2' in chapterNumbeInTitle or 'V2' in chapterNumbeInTitle \
+                    or 'v3' in chapterNumbeInTitle or 'V3' in chapterNumbeInTitle\
+                    or 'v4' in chapterNumbeInTitle or 'V4' in chapterNumbeInTitle):
+                    chapterNumber = chapterNumber.split('.')[0]
+
+            if (chapterNumber not in dico_chapters.keys()):
+                dico_chapters[chapterNumber] = chapterUrl
 
     return dico_chapters
+
+def getChapter(mangaName, chapter, chapterUrl):
+
+    chapterObj = {u'chapter': chapter, u'pages': [], u'title': 'None', u'url': chapterUrl}
+
+    # Get html content in a file
+    os.system("curl -s " + chapterUrl + " | grep '" + '<h2>' + "' > "+PATH+"/chapterInfos.txt")
+    # read the file
+    f = open(PATH+'/chapterInfos.txt', 'r')
+    content = f.readlines()
+    f.close()
+    # os.system("rm "+PATH+"/chapterInfos.txt")
+
+    for line in content:
+        if (mangaName in line):
+            title = ' '.join(line.split('</h2>')[0].split(mangaName)[-1].split(': ')[1:])
+            if (title != '') :
+                chapterObj['title'] = title
+
+    # Get html content in a file
+    os.system("curl -s " + chapterUrl + " | grep '<img src' | grep 'page' > "+PATH+"/chapterInfos.txt")
+    # read the file
+    f = open(PATH+'/chapterInfos.txt', 'r')
+    content = f.readlines()
+    f.close()
+    # os.system("rm "+PATH+"/chapterInfos.txt")
+    if (len(content) != 1):
+        print('   ERROR uploading', mangaName, chapter, ' in getting pages')
+        sys.exit()
+    
+    contentClean = content[0].split('/>')
+    for item in contentClean:
+        itemClean = item.split('<img src="')[-1]
+        if ('</div>' not in itemClean):
+            url = itemClean.split('" alt')[0]
+            page = getPageName(url.split('/')[-1].split('.')[0])
+            chapterObj['pages'].append({u'page': page, u'url': url})
+    
+    return chapterObj
 
 #-----------------------------------------------------------------------------------
 # CONNECTION AND INTERACTION WITH CLOUD FIRESTORE
@@ -183,10 +242,14 @@ def showCollectionMangas(store):
     try:
         mangasList = getMangasList(store)
         print('\n** List of manga on firestore **')
-        for (manga, index) in zip(mangasList, range(1, len(mangasList)+1)):
-            print('   ', index, ':', manga[u'name'], '  ', manga[u'lastChapter'])
+        if (len(mangasList) == 0):
+            print('   No mangas added to firestore')
+        else:
+            for (manga, index) in zip(mangasList, range(1, len(mangasList)+1)):
+                print('   ', index, ':', manga[u'name'], '  ', manga[u'lastChapter'])
     except google.cloud.exceptions.NotFound:
         print('/!\ Collection ', MANGAS_COLLECTION, "doesn't exist in firestore")
+        sys.exit()
 
 def findMangaInMangasList(mangaName, mangasList):
     mangaToFind = None
@@ -212,12 +275,13 @@ def updateMangaListItem(store, mangasList, mangaDict, strAction):
         store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
             u'list': sorted(mangasList, key=itemgetter('name')),
         })
-        print('\nSUCCESS firestore list item', strAction, mangaDict['name'])
+        print('SUCCESS firestore list item', strAction, mangaDict['name'])
     except google.api_core.exceptions.AlreadyExists:
         print('\n/!\ ERROR firestore list item', strAction, mangaDict['name'])
+        sys.exit()
 
 def addManga(store, mangaUrl):
-    print('\n SEARCHING manga linked to', mangaUrl, '...')
+    print('\nSEARCHING manga linked to', mangaUrl, '...')
     mangaDict = getMangaInfos(mangaUrl)
 
     isMangaDictOk = True
@@ -231,7 +295,7 @@ def addManga(store, mangaUrl):
         isMangaDictOk = False
 
     if (isMangaDictOk):
-        print(' ADDING', mangaDict['name'], 'to firebase...')
+        print('ADDING', mangaDict['name'], 'to firebase...')
         mangasList = getMangasList(store)
         if (findMangaInMangasList(mangaDict['name'], mangasList) == None):
             try:
@@ -240,10 +304,13 @@ def addManga(store, mangaUrl):
                 print('\nSUCCESS', mangaDict['name'], 'added to firestore')
             except:
                 print('\n/!\ ERROR in adding manga', mangaDict['name'], 'in manga list')
+                sys.exit()
         else:
-            print('\n/!\ ERROR manga', mangaName, 'already in manga list')
+            print('\n/!\ ERROR manga', mangaDict['name'], 'already in manga list')
+            sys.exit()
     else:
         print('  ERROR some information can\'t be retrieved from', mangaUrl)
+        sys.exit()
 
 def deleteManga(store, mangaName):
     try:
@@ -266,25 +333,67 @@ def deleteManga(store, mangaName):
             print('\n/!\ ERROR manga', mangaName, 'not in manga list')
     except:
         print('\n/!\ ERROR in deleting manga', mangaName)
+        sys.exit()
 
 def updateMangaOnFirestore(store, mangaName):
     mangasList = getMangasList(store)
-    mangaItem = findMangaInMangasList(mangaName, mangasList)
-    if (mangaItem != None):
-        print("\nUPDATE ", mangaItem['name'], "...")
-        dico_chapters = getMangaChaptersDico(mangaItem['url'])
+    mangaDict = findMangaInMangasList(mangaName, mangasList)
+    if (mangaDict != None):
+        print("\nUPDATE ", mangaDict['name'], "...")
+        dico_chapters = getMangaChaptersDico(mangaDict['name'], mangaDict['url'])
 
         for chapter in sorted(dico_chapters):
-            print(chapter, dico_chapters[chapter])
+            if (mangaDict['lastChapter'] == 'None' or chapter > mangaDict['lastChapter']):
+                updateMangaChapterOnFirestore(store, mangaDict, chapter, dico_chapters[chapter], mangasList)
+                mangaDict = findMangaInMangasList(mangaDict['name'], mangasList)
 
-        """for chapter in sorted(dico_chapters):
-            if (mangaItem['lastChapter'] == 'None' or chapter > mangaItem['lastChapter']):
-                updateMangaChapterOnFirestore(store, mangaName, chapter, dico_chapters[chapter], mangasList)
-                mangaItem = findMangaInMangasList(mangaName, mangasList)"""
-
-        print("\nSUCCESS " + mangaName + " updated on firestore")
+        print("\nSUCCESS " + mangaDict['name'] + " updated on firestore")
     else:
         print('\n/!\ Manga (document) ' + mangaName + " doesn't exists in firestore")
+        sys.exit()
+
+def updateMangaChapterOnFirestore(store, mangaDict, chapter, chapterUrl, mangasList):
+    try:
+        chapterBatch = getBatchName(chapter)
+        print("\n   UPLOADING", mangaDict['name'], "chapter", chapter, chapterBatch, "...")
+        chapterObj = getChapter(mangaDict['name'], chapter, chapterUrl)
+
+        batch = store.collection(CHAPTERS_COLLECTION).document(mangaDict['name'])\
+                    .collection(CHAPTERS_COLLECTION_PARTS).document(chapterBatch)
+
+        if (batch.get().to_dict() == None):
+            chapters = []
+        else:
+            chapters = batch.get().to_dict()[u'chapters']
+        
+        chapters.append(chapterObj)
+        batch.set({
+            u'chapters': chapters,
+        })
+        mangaDict['lastChapter'] = chapter
+        updateMangaListItem(store, mangasList, mangaDict, 'UPDATE CHAPTER')
+
+    except:
+        print('/!\ ERROR in UPLOADING', mangaDict['name'], "chapter", chapter)
+        sys.exit()
+
+def updateAllMangaOnFirestore(store):
+    print("\nUPDATING ALL ...")
+    mangasList = getMangasList(store)
+    if (len(mangasList) > 0):
+        for manga in mangasList:
+            updateMangaOnFirestore(store, manga[u'name'])
+    else:
+        print("\n/!\ no manga to update on firestore")
+
+def deleteAllMangaFromFirestore(store):
+    print("\nDELETE ALL ...")
+    mangasList = getMangasList(store)
+    if (len(mangasList) > 0):
+        for manga in mangasList:
+            deleteManga(store, manga[u'name'])
+    else:
+        print("\n/!\ no manga to update on firestore")
 
 #-----------------------------------------------------------------------------------
 # MAIN FUNCTION
@@ -314,6 +423,12 @@ def main():
     parser.add_argument('-u', '--update', nargs=1,
         help='update one manga in cloud firestore  (use "MangaName")',
         action='store', type=str)
+    parser.add_argument('--updateall',
+        help='update all mangas in cloud firestore',
+        action='store_true')
+    parser.add_argument('--deleteall',
+        help='delete all mangas in cloud firestore',
+        action='store_true')
 
     # Parsing of command line argument
     args = parser.parse_args(sys.argv[1:])
@@ -341,6 +456,16 @@ def main():
 
     elif(args.update != None):
         updateMangaOnFirestore(store, args.update[0])
+        print()
+        sys.exit()
+
+    elif(args.updateall == True):
+        updateAllMangaOnFirestore(store)
+        print()
+        sys.exit()
+
+    elif(args.deleteall == True):
+        deleteAllMangaFromFirestore(store)
         print()
         sys.exit()
 
