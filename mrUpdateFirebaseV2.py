@@ -24,10 +24,13 @@ URL_CHAPTER = 'https://manganelo.com/chapter/'
 DB_URL = 'https://mangareader-ef367.firebaseio.com'
 
 # COLLECTION NAMES (CLOUD FIRESTORE)
-MANGAS_COLLECTION = u'mangasList'
-MANGAS_DOCUMENT = u'mangas'
-MANGAS_LIST_FIELD = u'list'
-CHAPTERS_COLLECTION = u'mangasChapters'
+LIST_COLLECTION = u'mangasList'
+LIST_DOCUMENT = u'mangas'
+LIST_DOCUMENT_FIELD = u'list'
+
+MANGAS_COLLECTION = u'mangasChapters'
+MANGAS_LIST_FIELD = u'chaptersList'
+CHAPTERS_COLLECTION = u'chapters'
 CHAPTERS_COLLECTION_PARTS = u'parts'
 
 ## VARIABLES
@@ -188,21 +191,7 @@ def getMangaChaptersDico(mangaName, mangaUrl):
 
 def getChapter(mangaName, chapter, chapterUrl):
 
-    chapterObj = {u'chapter': chapter, u'pages': [], u'title': 'None', u'url': chapterUrl}
-
-    # Get html content in a file
-    os.system("curl -s " + chapterUrl + " | grep '" + '<h2>' + "' > "+PATH+"/chapterInfos.txt")
-    # read the file
-    f = open(PATH+'/chapterInfos.txt', 'r')
-    content = f.readlines()
-    f.close()
-    # os.system("rm "+PATH+"/chapterInfos.txt")
-
-    for line in content:
-        if (mangaName in line):
-            title = ' '.join(line.split('</h2>')[0].split(mangaName)[-1].split(': ')[1:])
-            if (title != '') :
-                chapterObj['title'] = title
+    chapterObj = {u'chapter': chapter, u'pages': [], u'url': chapterUrl}
 
     # Get html content in a file
     os.system("curl -s " + chapterUrl + " | grep '<img src' | grep 'page' > "+PATH+"/chapterInfos.txt")
@@ -232,7 +221,7 @@ def getChapter(mangaName, chapter, chapterUrl):
 def getMangasList(store):
     mangasList = []
     try:
-        mangasList = store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).get().to_dict()[MANGAS_LIST_FIELD]
+        mangasList = store.collection(LIST_COLLECTION).document(LIST_DOCUMENT).get().to_dict()[LIST_DOCUMENT_FIELD]
     except:
         print('/!\ ERROR in getting manga list')
         sys.exit()
@@ -248,7 +237,7 @@ def showCollectionMangas(store):
             for (manga, index) in zip(mangasList, range(1, len(mangasList)+1)):
                 print('   ', index, ':', manga[u'name'], '  ', manga[u'lastChapter'])
     except google.cloud.exceptions.NotFound:
-        print('/!\ Collection ', MANGAS_COLLECTION, "doesn't exist in firestore")
+        print('/!\ Collection ', LIST_COLLECTION, "doesn't exist in firestore")
         sys.exit()
 
 def findMangaInMangasList(mangaName, mangasList):
@@ -272,7 +261,7 @@ def updateMangaListItem(store, mangasList, mangaDict, strAction):
     removeMangaFromMangasList(mangaDict['name'], mangasList)
     mangasList.append(mangaDict)
     try:
-        store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
+        store.collection(LIST_COLLECTION).document(LIST_DOCUMENT).set({
             u'list': sorted(mangasList, key=itemgetter('name')),
         })
         print('SUCCESS firestore list item', strAction, mangaDict['name'])
@@ -300,7 +289,7 @@ def addManga(store, mangaUrl):
         if (findMangaInMangasList(mangaDict['name'], mangasList) == None):
             try:
                 updateMangaListItem(store, mangasList, mangaDict, 'ADD MANGA')
-                store.collection(CHAPTERS_COLLECTION).document(mangaDict['name']).set({})
+                store.collection(MANGAS_COLLECTION).document(mangaDict['name']).set({u'chaptersList': []})
                 print('\nSUCCESS', mangaDict['name'], 'added to firestore')
             except:
                 print('\n/!\ ERROR in adding manga', mangaDict['name'], 'in manga list')
@@ -316,16 +305,16 @@ def deleteManga(store, mangaName):
     try:
         mangasList = getMangasList(store)
         if (findMangaInMangasList(mangaName, mangasList) != None):
-            collection = store.collection(CHAPTERS_COLLECTION).document(mangaName)\
-                .collection(CHAPTERS_COLLECTION_PARTS).get()
+            collection = store.collection(MANGAS_COLLECTION).document(mangaName)\
+                .collection(CHAPTERS_COLLECTION).get()
 
             for doc in collection :
-                store.collection(CHAPTERS_COLLECTION).document(mangaName)\
-                    .collection(CHAPTERS_COLLECTION_PARTS).document(doc.id).delete()
-            store.collection(CHAPTERS_COLLECTION).document(mangaName).delete()
+                store.collection(MANGAS_COLLECTION).document(mangaName)\
+                    .collection(CHAPTERS_COLLECTION).document(doc.id).delete()
+            store.collection(MANGAS_COLLECTION).document(mangaName).delete()
 
             removeMangaFromMangasList(mangaName, mangasList)
-            store.collection(MANGAS_COLLECTION).document(MANGAS_DOCUMENT).set({
+            store.collection(LIST_COLLECTION).document(LIST_DOCUMENT).set({
                 u'list': mangasList,
             })
             print('\nSUCCESS', mangaName, 'deleted from firestore')
@@ -358,18 +347,21 @@ def updateMangaChapterOnFirestore(store, mangaDict, chapter, chapterUrl, mangasL
         print("\n   UPLOADING", mangaDict['name'], "chapter", chapter, chapterBatch, "...")
         chapterObj = getChapter(mangaDict['name'], chapter, chapterUrl)
 
-        batch = store.collection(CHAPTERS_COLLECTION).document(mangaDict['name'])\
-                    .collection(CHAPTERS_COLLECTION_PARTS).document(chapterBatch)
+        mangaDoc = store.collection(MANGAS_COLLECTION).document(mangaDict['name'])
 
-        if (batch.get().to_dict() == None):
-            chapters = []
+        if (mangaDoc.get().to_dict() == None):
+            chaptersList = []
         else:
-            chapters = batch.get().to_dict()[u'chapters']
+            chaptersList = mangaDoc.get().to_dict()[u'chaptersList']
         
-        chapters.append(chapterObj)
-        batch.set({
-            u'chapters': chapters,
+        chaptersList.append(chapterObj['chapter'])
+        mangaDoc.set({
+            u'chaptersList': chaptersList,
         })
+
+        store.collection(MANGAS_COLLECTION).document(mangaDict['name'])\
+            .collection(CHAPTERS_COLLECTION).document(chapterObj['chapter']).set(chapterObj)
+        
         mangaDict['lastChapter'] = chapter
         updateMangaListItem(store, mangasList, mangaDict, 'UPDATE CHAPTER')
 
