@@ -354,15 +354,15 @@ def updateMangaChapterOnFirestore(store, mangaDict, chapter, chapterUrl, mangasL
         else:
             chaptersList = mangaDoc.get().to_dict()[u'chaptersList']
         
-        chaptersList.append(chapterObj['chapter'])
+        chaptersList.append(mangaDict['name']+'_'+chapterObj['chapter'])
         mangaDoc.set({
             u'chaptersList': chaptersList,
         })
 
         store.collection(MANGAS_COLLECTION).document(mangaDict['name'])\
-            .collection(CHAPTERS_COLLECTION).document(chapterObj['chapter']).set(chapterObj)
+            .collection(CHAPTERS_COLLECTION).document(mangaDict['name']+'_'+chapterObj['chapter']).set(chapterObj)
         
-        mangaDict['lastChapter'] = chapter
+        mangaDict['lastChapter'] = chapterObj['chapter']
         updateMangaListItem(store, mangasList, mangaDict, 'UPDATE CHAPTER')
 
     except:
