@@ -1,13 +1,12 @@
 # HELP LINK
 # https://medium.com/@cbrannen/importing-data-into-firestore-using-python-dce2d6d3cd51
 
-# INSTALL virtualenv
-# pip3 install virtualenv
-	# activate env with : source ./env/bin/activate
-# (env) pip install firebase-admin google-cloud-firestore
-
-# FIRESTORE AUTH$
-# get file ServiceAccountKey.json from firebase project for credentials certificate
+# Python 3 script to update firebase database
+# install
+# need Python 3
+# need pip3
+# sudo pip3 install firebase-admin
+# get credentials : firebase console > project > project parameters > service account > generate new private key > rename file to ServiceAccountKey.json
 
 # IMPORT
 import os
@@ -78,7 +77,7 @@ def getPageName(page):
 def searchManga(pattern):
     print('SEARCHING ...')
     pattern = pattern.replace('-', '_')
-    
+
     # Get html content in a file
     os.system("curl -s " + URL_SEARCH+pattern + " | grep '" + URL_MANGA + "' | grep -v '<h3>' > "+PATH+"/searchResults.txt")
     # read the file
@@ -109,46 +108,32 @@ def getMangaInfos(mangaUrl):
     f.close()
     os.system("rm "+PATH+"/mangaInfos.txt")
 
-    mangaDict = {'name': '', 'imgUrl': '', 'url': mangaUrl, 'status': '', 'authors': [], 'lastChapter': 'None'}
+    mangaDict = {'name': '', 'imgUrl': '', 'url': mangaUrl, 'status': '', 'lastChapter': 'None'}
 
-    mangaInfoContent = []
-    divToClose = 0
-    ulToClose = 0
-    infoDivFound = False
+    imageFlag = False
+    nameFlag = False
+    statusFlag = False
+
     for line in content:
-        if ('<div class="manga-info-top">' in line or '<div class="manga-info-pic">' in line):
-            infoDivFound = True
-            divToClose = divToClose + 1
-        if (infoDivFound == True and '</div>' in line and '<div>' not in line):
-            divToClose = divToClose - 1
-        if (infoDivFound):
-            mangaInfoContent.append(line)
-        if (infoDivFound == True and divToClose == 0):
-            break
+        if (imageFlag):
+            mangaDict['imgUrl'] = line.split('src="')[1].split('"')[0]
+            imageFlag = False
+        if ('<span class="info-image">' in line):
+            imageFlag = True
 
-    inImgDiv = False
-    inAuthorLi = False
-    for line in mangaInfoContent:
-        if ('<h1>' in line and '</h1>' in line):
-            mangaDict['name'] = line.split('>')[1].split('<')[0]
-        elif ('Status' in line):
-            mangaDict['status'] = line.split('<li>Status : ')[-1].split('</li>')[0]
-        elif ('<div class="manga-info-pic">' in line):
-            inImgDiv = True
-        elif ('img' in line and inImgDiv):
-            mangaDict['imgUrl'] = line.split('<img src="')[1].split('"')[0]
-            inImgDiv = False
-        elif ('<li>Author' in line):
-            inAuthorLi = True
-        elif (inAuthorLi):
-            authors = line.split('</a>')
-            for author in authors[:-1]:
-                if (author[0] != ' '):
-                    mangaDict['authors'].append(author.split('>')[-1])
-                else:
-                    mangaDict['authors'].append(author.split('>')[-1][1:])
-            inAuthorLi = False
-        
+        if (nameFlag):
+            mangaDict['name'] = line.split('<h1>')[1].split('</h1>')[0]
+            nameFlag = False
+        if ('<div class="story-info-right">' in line):
+            nameFlag = True
+
+        if (statusFlag):
+            mangaDict['status'] = line.split('<td class="table-value">')[1].split('</td>')[0]
+            statusFlag = False
+            break
+        if ('<td class="table-label"><i class="info-status"></i>Status :</td>' in line):
+            statusFlag = True
+
     return mangaDict
 
 # Function to get chapter dico from a manga
@@ -162,23 +147,14 @@ def getMangaChaptersDico(mangaName, mangaUrl):
     content = f.readlines()
     f.close()
     os.system("rm "+PATH+"/mangaChapterslist.txt")
-        
+
     dico_chapters = {}
 
     for line in content:
-        if ("<span>" in line):
-            chapterUrl = line.split('<a href="')[1].split('"')[0]
-            chapterNumber = getChapName(chapterUrl.split('_')[-1])
-            if ('.' in chapterNumber):
-                titlePart = line.split('title="')[-1].split('">')[-1].split('<')[0]
-                chapterNumbeInTitle = titlePart.split(':')[0]
-                if ('v2' in chapterNumbeInTitle or 'V2' in chapterNumbeInTitle \
-                    or 'v3' in chapterNumbeInTitle or 'V3' in chapterNumbeInTitle\
-                    or 'v4' in chapterNumbeInTitle or 'V4' in chapterNumbeInTitle):
-                    chapterNumber = chapterNumber.split('.')[0]
-
-            if (chapterNumber not in dico_chapters.keys()):
-                dico_chapters[chapterNumber] = chapterUrl
+        if (stringToFind in line and 'link_chapter_null' not in line):
+            chapterUrl = line.split('href="')[1].split('"')[0]
+            chapterNumber = getChapName(chapterUrl.split('chapter_')[1])
+            dico_chapters[chapterNumber] = chapterUrl
 
     return dico_chapters
 
@@ -196,7 +172,7 @@ def getChapter(mangaName, chapter, chapterUrl):
     if (len(content) != 1):
         print('   ERROR uploading', mangaName, chapter, ' in getting pages')
         sys.exit()
-    
+
     contentClean = content[0].split('/>')
     for item in contentClean:
         itemClean = item.split('<img src="')[-1]
@@ -204,7 +180,7 @@ def getChapter(mangaName, chapter, chapterUrl):
             url = itemClean.split('" alt')[0]
             page = getPageName(url.split('/')[-1].split('.')[0])
             chapterObj['pages'].append({u'page': page, u'url': url})
-    
+
     return chapterObj
 
 #-----------------------------------------------------------------------------------
@@ -272,8 +248,6 @@ def addManga(store, mangaUrl):
     if (mangaDict['imgUrl'] == ''):
         isMangaDictOk = False
     if (mangaDict['status'] == ''):
-        isMangaDictOk = False
-    if (mangaDict['authors'] == []):
         isMangaDictOk = False
 
     if (isMangaDictOk):
@@ -345,7 +319,7 @@ def updateMangaChapterOnFirestore(store, mangaDict, chapter, chapterUrl, mangasL
             chaptersList = []
         else:
             chaptersList = mangaDoc.get().to_dict()[u'chaptersList']
-        
+
         chaptersList.append(mangaDict['name']+'_'+chapterObj['chapter'])
         mangaDoc.set({
             u'chaptersList': chaptersList,
@@ -353,7 +327,7 @@ def updateMangaChapterOnFirestore(store, mangaDict, chapter, chapterUrl, mangasL
 
         store.collection(MANGAS_COLLECTION).document(mangaDict['name'])\
             .collection(CHAPTERS_COLLECTION).document(mangaDict['name']+'_'+chapterObj['chapter']).set(chapterObj)
-        
+
         mangaDict['lastChapter'] = chapterObj['chapter']
         updateMangaListItem(store, mangasList, mangaDict, 'UPDATE CHAPTER')
 
@@ -422,7 +396,7 @@ def main():
         searchManga(args.search[0])
         print()
         sys.exit()
-    
+
     elif(args.list == True):
         showCollectionMangas(store)
         print()
